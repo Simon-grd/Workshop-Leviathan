@@ -9,11 +9,25 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --animate-emergency-blink: blink 1s ease-in-out infinite;
-  @keyframes blink {
-    0%, 100% { fill: #dc2626; }
-    50%       { fill: #450a0a; }
-  }
 }
+
+@keyframes blink {
+  0%, 100% { fill: #dc2626; }
+  50%       { fill: #450a0a; }
+}
+
+@keyframes pan-circle {
+  0%   { background-position: 55% 50%; }
+  25%  { background-position: 50% 45%; }
+  50%  { background-position: 45% 50%; }
+  75%  { background-position: 50% 55%; }
+  100% { background-position: 55% 50%; }
+}
+
+@keyframes asteroid-right  { from { transform: translate(-120px, 0)  rotate(0deg); } to { transform: translate(0px,   0)  rotate(180deg); } }
+@keyframes asteroid-left   { from { transform: translate( 120px, 0)  rotate(0deg); } to { transform: translate(0px,   0)  rotate(-180deg); } }
+@keyframes asteroid-top    { from { transform: translate(0, -120px)  rotate(0deg); } to { transform: translate(0,   0px) rotate(180deg); } }
+@keyframes asteroid-bottom { from { transform: translate(0,  120px)  rotate(0deg); } to { transform: translate(0,   0px) rotate(-180deg); } }
 
 body {
   background: var(--background);
