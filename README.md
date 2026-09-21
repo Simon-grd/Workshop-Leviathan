@@ -1,107 +1,85 @@
-#  Léviathan : Edge Computing & Conteneurisation de Survie
+# Léviathan v2 : Proxmox, playbook de crise et deux interfaces
 
 > Workshop 2026 · B3 · Groupe G<6>
 
-En situation de crise extrême (perte de 80 % de l'énergie), le vaisseau ne peut plus faire tourner des OS lourds.
-**Léviathan** bascule automatiquement les services vitaux (oxygène, communications de secours) sur un cluster de conteneurs ultra-légers (Alpine) et coupe tout ce qui n'est pas indispensable.
+Cette version remplace la logique Docker SDK par un contrôle Proxmox via MQTT et un playbook de crise dédié. Le système coupe les services des pools secondaires puis applique la procédure de redémarrage humaine avec validation à deux officiers.
 
-## Pourquoi ça sauve le vaisseau
+## Flux de bout en bout
 
-- Les services **vitaux** restent actifs même à 10 % de batterie.
-- La bascule est **automatique** : aucune intervention humaine nécessaire pendant la crise.
-- Le redémarrage des systèmes coupés reste **sous contrôle humain**, via un terminal à double authentification (règle des deux officiers).
-
-## Architecture
-
-```
-[Simulateur d'énergie]──▶ Prometheus ──▶ Grafana (dashboards + alertes)
-   (exporter Python)          ▲                   │ webhook
-                              │                   ▼
-   node_exporter + cAdvisor   │        Hyperviseur Python (contrôleur)
-   sur chaque nœud ───────────┘          │  Docker SDK
-                                         ▼
-                        Nœud "confort" ──migration──▶ Cluster "survie" Alpine
-                                                      ▲
-                        Terminal manuel (web + 2FA) ──┘
+```text
+ESP32 (capteur feu) ──MQTT──▶ Mosquitto (VLAN 10) ◀──MQTT── API Python ◀── Interface 2 (scénarios)
+                                    │                            │
+                                    ▼                            ▼
+                             Playbook Python              WebSocket ──▶ Interface 1 (schéma + alertes)
+                                    │ proxmoxer (token restreint)
+                                    ▼
+                    Proxmox : kill des CT du pool VLAN 20 (puis VLAN 30 si crise énergétique)
 ```
 
-Détails : [docs/architecture.md](docs/architecture.md)
+Le lanceur de scénarios publie le même message qu'un ESP32. La démo passe donc par le vrai chemin du système et un vrai capteur peut être branché sans modifier l'API.
 
 ## Structure du dépôt
 
-```
-leviathan/
-├── hypervisor/   # Contrôleur : lit les métriques, décide, coupe/migre (Dev 1)
-├── terminal/     # Interface web asynchrone + double authentification (Dev 2)
-├── simulator/    # Exporter Prometheus simulant batterie et consommation
-├── docs/         # Architecture, contrat d'API, conventions, dossier
-├── .env.example  # Variables d'environnement (copier en .env, jamais commité)
-└── README.md
-```
-
-| Dossier | Rôle | Stack | Port |
-|---|---|---|---|
-| `simulator/` | Expose `battery_percent` et `power_draw_watts`, chute déclenchable en démo | Python, prometheus_client | 8000 (métriques), 8001 (contrôle) |
-| `hypervisor/` | Boucle de décision par seuils, arrêt par tier, migration BDD | Python, Docker SDK | 8100 (webhook/API) |
-| `terminal/` | Login mot de passe + TOTP, validation 2e officier, redémarrage forcé | FastAPI, WebSocket, pyotp | 8200 |
-
-## Prérequis
-
-- Python 3.11+
-- Docker (accès au socket Docker de l'hôte ou distant)
-- Prometheus + Grafana fournis par l'équipe infra
-
-## Démarrage rapide (développement local)
-
-```bash
-cp .env.example .env
-
-# 1. Simulateur
-cd simulator && pip install -r requirements.txt && python exporter.py
-
-# 2. Hyperviseur (mode dry-run par défaut)
-cd hypervisor && pip install -r requirements.txt && python main.py --dry-run
-
-# 3. Terminal
-cd terminal && pip install -r requirements.txt && uvicorn app.main:app --port 8200 --reload
+```text
+Workshop-Leviathan/
+├── web/              # Next.js : /ship et /scenarios
+├── api/              # FastAPI : REST, WebSocket, auth 2FA, relais MQTT, PostgreSQL
+├── playbook/         # Script Python : MQTT → proxmoxer
+├── firmware/         # ESP32 / capteur feu
+├── infra/            # Runbooks Proxmox/Ceph/VLAN, scripts pveum
+├── docs/             # Architecture, contrat d'API, conventions
+├── .env.example      # Variables d'environnement (copier en .env, jamais commit)
+├── README.md
+├── hypervisor/       # Ancien dossier v1 (mémoire historique)
+├── terminal/         # Ancien dossier v1 (mémoire historique)
+├── simulator/        # Legacy v1, hors périmètre de la v2
+└── {hypervisor,terminal/}  # ancien arborescence non utilisée
 ```
 
-Provoquer une crise pendant la démo :
+## Les deux interfaces
 
-```bash
-curl "http://localhost:8001/set?battery=15"   # force la batterie à 15 %
-curl "http://localhost:8001/set?battery=100"  # remise à zéro avant la soutenance
-```
+### Interface 1 : /ship
+- Schéma SVG du vaisseau, zones cliquables : Passerelle, Support vie, Salle serveurs, Laboratoire, Loisirs
+- Couleurs : vert (OK), orange (alerte), rouge (incendie), gris (conteneurs coupés)
+- Journal en direct des étapes du playbook
+- Données WebSocket de l'API : état des CT par pool + alertes MQTT
 
-## Conventions (à respecter par toute l'équipe)
+### Interface 2 : /scenarios
+- Boutons : incendie laboratoire, perte d'énergie 80 %, reset de la démo
+- Appel de `POST /scenarios/{nom}` (authentifié)
+- Publication du même message MQTT qu'un vrai capteur
 
-Voir [docs/conventions.md](docs/conventions.md).
+## Infra : préparation du terrain
 
-- **Tiers de conteneurs** (label Docker `tier`) : `vital` · `essentiel` · `loisir` · `recherche`
-- **Seuils de décision** : < 40 % → arrêt `loisir` · < 20 % → arrêt `recherche` · < 10 % → migration des BDD
-- **Branches** : `main` (stable) · `dev` · `feature/<nom>` · pas de push direct sur `main`
-- **Commits** : `feat:`, `fix:`, `docs:`, `test:`, `chore:`
-- **Secrets** : jamais dans le dépôt (voir `.env.example`)
+- 3 nœuds Proxmox minimum, chacun avec un disque dédié pour un OSD Ceph
+- Pool Ceph RBD `vital-pool` avec `size=3` et `min_size=2`
+- CT vitaux sous HA, hors des pools VLAN 20/30
+- VLAN 10 critique, VLAN 20 laboratoire, VLAN 30 loisirs
+- Firewall datacenter avec règles de quarantaine
+- Token Proxmox restreint avec `privsep=1` et ACL sur `lab-vlan20` et `loisirs-vlan30`
 
-## Contrat d'API
+## Points critiques à respecter
 
-Voir [docs/api-contract.md](docs/api-contract.md).
+- Le HA peut relancer un CT immédiatement après un `stop` ; seuls les CT vitaux doivent être sous HA.
+- Il faut deux ACL pour le token : sur l'utilisateur et sur le token lui-même.
+- Le redémarrage des systèmes coupés doit rester sous validation humaine à double officier.
+- `status/stop` est bien le bon appel pour un kill immédiat ; `shutdown` est propre mais trop lent.
+- Le playbook est vital : il doit tourner dans le VLAN 10, sous HA.
+- Le secret du token Proxmox ne doit jamais aller dans Git.
 
-## Planning
+## Documentation technique
 
-| Jour | Objectif dev |
+- [docs/architecture.md](docs/architecture.md)
+- [docs/api-contract.md](docs/api-contract.md)
+- [docs/conventions.md](docs/conventions.md)
+
+## Répartition par binôme
+
+| Profil | Mission |
 |---|---|
-| Lundi | Contrat d'API figé, dépôt, maquettes, seuils |
-| Mardi | Simulateur, boucle de décision, squelette du terminal, 2FA |
-| Mercredi | Déploiement sur l'infra, migration BDD, webhook Grafana, tests de crise |
-| Jeudi | Gel du code (`v1.0-soutenance`), dossier PDF, ZIP |
-| Vendredi | Soutenance (5 min) : impact → intro en anglais → démo |
+| Infra système | Cluster Proxmox, Ceph, HA des CT vitaux, réplique PostgreSQL, pools, token |
+| Infra réseau | Bridge VLAN-aware, firewall, isolation, accès ESP32 |
+| Dev 1 | Playbook, contrat MQTT, firmware ESP32, tests `DRY_RUN` |
+| Dev 2 | Next.js `/ship` et `/scenarios`, API FastAPI + WebSocket, auth 2FA |
 
-## Équipe
-
-| Nom | Profil | Périmètre |
-|---|---|---|
-| … | Dev 1 | `hypervisor/`, `simulator/` |
-| … | Dev 2 | `terminal/` |
-| … | Infra système | Alpine, Docker, Prometheus/Grafana, AD |
-| … | Infra réseau | DNS/DHCP, VRRP, réseaux virtuels |
+> Les dossiers `hypervisor/`, `terminal/` et `simulator/` de la v1 restent présents uniquement en mémoire historique. La v2 s'appuie sur `api/`, `web/`, `playbook/`, `firmware/` et `infra/`.

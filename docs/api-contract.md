@@ -1,40 +1,86 @@
-# Contrat d'API
+# Contrat d'API v2
 
-> Statut : **à figer lundi** avec l'équipe.
+## MQTT
 
-## Métriques Prometheus (simulateur)
+### Topics publiés par l'ESP32
 
-| Métrique | Type | Description |
-|---|---|---|
-| `battery_percent` | gauge | Niveau de batterie (0-100) |
-| `power_draw_watts` | gauge | Consommation instantanée |
+- `leviathan/sensors/lab/fire`
+- Payload exemple :
 
-## API du simulateur (port 8001)
+```json
+{"sensor":"esp32-lab-01","fire":true,"value":812}
+```
+
+### Topic pour les scénarios
+
+- `leviathan/scenarios/run`
+- Payload exemple :
+
+```json
+{"scenario":"fire_lab"}
+```
+
+### Topic retour playbook → interface
+
+- `leviathan/playbook/log`
+- Payload attendu :
+
+```json
+{"step":"stop_pool","pool":"lab-vlan20","status":"started","timestamp":"2026-09-21T10:00:00Z"}
+```
+
+## API REST (FastAPI)
+
+### Authentification
 
 | Méthode | Route | Description |
 |---|---|---|
-| GET | `/set?battery=<0-100>` | Force le niveau de batterie |
+| POST | `/auth/login` | Login utilisateur |
+| POST | `/auth/2fa` | Validation TOTP du second officier |
 
-## API de l'hyperviseur (port 8100)
-
-| Méthode | Route | Description |
-|---|---|---|
-| GET | `/health` | État du contrôleur |
-| GET | `/containers` | Conteneurs et tiers |
-| POST | `/webhook/grafana` | Réception d'une alerte Grafana |
-| POST | `/restart/{tier}` | Redémarre un tier (appelé par le terminal, après double validation) |
-
-## API du terminal (port 8200)
+### Scénarios
 
 | Méthode | Route | Description |
 |---|---|---|
-| POST | `/login` | Mot de passe → jeton intermédiaire |
-| POST | `/2fa` | Code TOTP → session |
-| GET | `/status` | État des systèmes (WebSocket `/ws` pour le temps réel) |
-| POST | `/restart` | Demande de redémarrage (officier 1) → statut `pending` |
-| POST | `/approve/{request_id}` | Validation par un second officier (TOTP) |
-| GET | `/audit` | Journal d'audit |
+| POST | `/scenarios/fire_lab` | Lance le scénario incendie sur le pool labo |
+| POST | `/scenarios/power_drop` | Simule une chute d'énergie 80 % |
+| POST | `/scenarios/reset` | Remet la démo à zéro |
 
-## Codes d'erreur
+### État
 
-`401` non authentifié · `403` rôle insuffisant / même officier · `409` demande déjà traitée · `410` demande expirée
+| Méthode | Route | Description |
+|---|---|---|
+| GET | `/health` | État de l'API |
+| GET | `/status` | État des CT et des alertes |
+| GET | `/logs` | Journal d'audit |
+
+### WebSocket
+
+| Route | Description |
+|---|---|
+| `/ws` | Flux temps réel des événements MQTT / playbook vers `Interface 1` |
+
+## Schéma de données WebSocket
+
+```json
+{
+  "type": "alert",
+  "zone": "lab",
+  "severity": "red",
+  "message": "Incendie détecté dans le laboratoire",
+  "timestamp": "2026-09-21T10:00:00Z"
+}
+```
+
+## Codes de réponse
+
+- `200` OK
+- `202` accepté / scénario planifié
+- `401` non authentifié
+- `403` droits insuffisants
+- `409` conflit de scénario
+- `500` erreur côté bus ou Proxmox
+
+## Règle de conformité
+
+Le playbook et l'API doivent accepter le même payload MQTT que le capteur réel ; la démo doit donc jouer le chemin final sans artifices de simulation interne.
