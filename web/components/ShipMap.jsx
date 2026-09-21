@@ -113,7 +113,7 @@ function AsteroidImpact({ part, zoneId }) {
 
   return (
     <g>
-      <animateMotion dur="2s" path={`M ${cx},${startY} L ${cx},${endY}`} />
+      <animateMotion dur="2s" fill="freeze" path={`M ${cx},${startY} L ${cx},${endY}`} />
       <polygon fill="#f97316" opacity="0.95">
         <animate attributeName="points" values={flameAnim1} dur="0.3s" repeatCount="indefinite" />
       </polygon>
@@ -132,7 +132,11 @@ export default function ShipMap({ zones, env, asteroids }) {
   return (
     <div className="w-full max-w-5xl mx-auto p-6 rounded-xl">
       <svg viewBox="0 0 800 500" className="w-full h-auto">
-        <defs/>
+        <defs>
+          <clipPath id="ship-clip">
+            <rect x="0" y="0" width="800" height="500" />
+          </clipPath>
+        </defs>
 
         {/* Voile sombre */}
         <rect x="0" y="0" width="800" height="500" fill="#000" opacity="0.2" />
@@ -174,7 +178,7 @@ export default function ShipMap({ zones, env, asteroids }) {
           const fill    = getColor(status, base, 'fill');
           const stroke  = getColor(status, base, 'stroke');
           const part    = SHIP_PARTS[id];
-          const isAlert = status === 'alert';
+          const isAlert = status === 'alert' || asteroids?.[id];
           const [cx, cy] = part.labelPos;
           return (
             <g key={id}>
@@ -182,11 +186,12 @@ export default function ShipMap({ zones, env, asteroids }) {
                 d={part.path}
                 stroke={stroke}
                 strokeWidth="2"
-                style={isAlert
-                  ? { fill, animation: 'blink 1s ease-in-out infinite' }
-                  : { fill }
-                }
-              />
+                style={{ fill }}
+              >
+                {isAlert && (
+                  <animate attributeName="fill" values="#dc2626;#450a0a;#dc2626" dur="1s" repeatCount="indefinite" />
+                )}
+              </path>
               <path d={part.path} fill="none" stroke="#1e40af" strokeWidth="0.5" opacity="0.4" />
               <text x={cx} y={cy - 10} textAnchor="middle" fill="white" style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>
                 {label}
@@ -200,9 +205,11 @@ export default function ShipMap({ zones, env, asteroids }) {
         })}
 
         {/* Astéroïdes */}
-        {asteroids && Object.entries(asteroids).map(([id, active]) =>
-          active ? <AsteroidImpact key={id} part={SHIP_PARTS[id]} zoneId={id} /> : null
-        )}
+        <g clipPath="url(#ship-clip)">
+          {asteroids && Object.entries(asteroids).map(([id, active]) =>
+            active ? <AsteroidImpact key={id} part={SHIP_PARTS[id]} zoneId={id} /> : null
+          )}
+        </g>
 
         {/* Légende */}
         <g>
