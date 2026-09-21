@@ -1,6 +1,6 @@
 #  Léviathan : Edge Computing & Conteneurisation de Survie
 
-> Workshop 2026 · B3 · Groupe G<n>
+> Workshop 2026 · B3 · Groupe G<6>
 
 En situation de crise extrême (perte de 80 % de l'énergie), le vaisseau ne peut plus faire tourner des OS lourds.
 **Léviathan** bascule automatiquement les services vitaux (oxygène, communications de secours) sur un cluster de conteneurs ultra-légers (Alpine) et coupe tout ce qui n'est pas indispensable.
