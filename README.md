@@ -1,4 +1,4 @@
-# 🐋 Léviathan : Edge Computing & Conteneurisation de Survie
+#  Léviathan : Edge Computing & Conteneurisation de Survie
 
 > Workshop 2026 · B3 · Groupe G<n>
 
