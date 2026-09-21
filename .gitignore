@@ -1,0 +1,21 @@
+# Secrets
+.env
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Éditeurs / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Données locales
+*.db
+*.sqlite3
+logs/

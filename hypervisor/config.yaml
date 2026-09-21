@@ -1,0 +1,12 @@
+prometheus_url: http://prometheus:9090
+poll_interval_seconds: 5
+consecutive_readings: 3     # anti-rebond : N lectures sous le seuil avant d'agir
+hysteresis: 5               # points de batterie pour ré-armer un niveau
+
+levels:
+  - below: 40
+    stop_tiers: [loisir]
+  - below: 20
+    stop_tiers: [recherche]
+  - below: 10
+    migrate_databases: true
