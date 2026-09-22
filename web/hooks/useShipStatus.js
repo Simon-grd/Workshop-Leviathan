@@ -10,7 +10,7 @@ const INITIAL_ENV = {
   support_vie: { ...EMPTY_ENV },
   loisirs:     { ...EMPTY_ENV },
 };
-const INITIAL_ASTEROIDS = { passerelle: true, laboratoire: false, support_vie: false, loisirs: false };
+const INITIAL_ASTEROIDS = { passerelle: false, laboratoire: false, support_vie: false, loisirs: false };
 
 export default function useShipStatus() {
   const [zones, setZones] = useState(INITIAL);
