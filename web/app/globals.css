@@ -24,10 +24,16 @@
   100% { background-position: 55% 50%; }
 }
 
-@keyframes asteroid-right  { from { transform: translate(-120px, 0)  rotate(0deg); } to { transform: translate(0px,   0)  rotate(180deg); } }
-@keyframes asteroid-left   { from { transform: translate( 120px, 0)  rotate(0deg); } to { transform: translate(0px,   0)  rotate(-180deg); } }
-@keyframes asteroid-top    { from { transform: translate(0, -120px)  rotate(0deg); } to { transform: translate(0,   0px) rotate(180deg); } }
-@keyframes asteroid-bottom { from { transform: translate(0,  120px)  rotate(0deg); } to { transform: translate(0,   0px) rotate(-180deg); } }
+@keyframes asteroid-move {
+  0%   { transform: translateY(0)          rotate(0deg);   opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translateY(var(--dy))  rotate(360deg); opacity: 0; }
+}
+
+@keyframes rotate-asteroid {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 
 body {
   background: var(--background);

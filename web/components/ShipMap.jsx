@@ -1,3 +1,6 @@
+'use client';
+import { useRef, useState, useEffect } from 'react';
+
 const STATUS_COLOR = {
   alert:       '#dc2626',
   offline:     '#374151',
@@ -24,26 +27,10 @@ const ZONES = [
 ];
 
 const SHIP_PARTS = {
-  passerelle: {
-    path: 'M 720,250 L 620,180 L 580,250 L 620,320 Z',
-    labelPos: [630, 230],
-    impactX: 600,
-  },
-  laboratoire: {
-    path: 'M 620,180 L 440,160 L 420,250 L 440,340 L 620,320 L 580,250 Z',
-    labelPos: [520, 230],
-    impactX: 450,
-  },
-  support_vie: {
-    path: 'M 440,160 L 260,170 L 240,250 L 260,330 L 440,340 L 420,250 Z',
-    labelPos: [340, 230],
-    impactX: 270,
-  },
-  loisirs: {
-    path: 'M 260,170 L 100,200 L 80,250 L 100,300 L 260,330 L 240,250 Z',
-    labelPos: [175, 230],
-    impactX: 110,
-  },
+  passerelle:  { path: 'M 720,250 L 620,180 L 580,250 L 620,320 Z',                     labelPos: [630, 230] },
+  laboratoire: { path: 'M 620,180 L 440,160 L 420,250 L 440,340 L 620,320 L 580,250 Z', labelPos: [520, 230] },
+  support_vie: { path: 'M 440,160 L 260,170 L 240,250 L 260,330 L 440,340 L 420,250 Z', labelPos: [340, 230] },
+  loisirs:     { path: 'M 260,170 L 100,200 L 80,250 L 100,300 L 260,330 L 240,250 Z',  labelPos: [175, 230] },
 };
 
 const WINGS = [
@@ -57,6 +44,13 @@ const METRICS = [
   { key: 'oxygen',      label: 'O₂',   unit: '%',   warn: v => v < 19.5 },
   { key: 'radiation',   label: 'RAD',  unit: 'μSv', warn: v => v > 1 },
 ];
+
+// Centre X de chaque zone en fraction du viewBox (800px)
+const ZONE_X_FRAC = { passerelle: 630/800, laboratoire: 520/800, support_vie: 340/800, loisirs: 175/800 };
+// Centre Y du vaisseau en fraction du viewBox (500px) — y=250 = milieu
+const ZONE_Y_FRAC = 250/500;
+
+const ASTEROID_DIR = { passerelle: 'top', laboratoire: 'bottom', support_vie: 'top', loisirs: 'bottom' };
 
 function getColor(status, base, type) {
   const key = status && STATUS_COLOR[status] ? status : base;
@@ -83,61 +77,67 @@ function ZoneMetrics({ zoneEnv, cx, cy }) {
   );
 }
 
-// L'astéroïde arrive du haut ou du bas selon la zone
-const ASTEROID_DIR = {
-  passerelle:  'top',
-  laboratoire: 'bottom',
-  support_vie: 'top',
-  loisirs:     'bottom',
-};
-
-function AsteroidImpact({ part, zoneId }) {
-  const cx     = part.impactX;
+function AsteroidImpact({ zoneId, impactX, impactY }) {
   const fromTop = ASTEROID_DIR[zoneId] === 'top';
-  const startY = fromTop ? -60 : 560;
-  const endY   = 250;
+  const SIZE = 48;
+  const FLAME_H = 70;
+  const startY = fromTop ? -SIZE : window.innerHeight;
+  const dy = impactY - startY;
 
-  // Flammes pointent vers le haut ou le bas (sens inverse du mouvement)
-  const flamePoints1 = fromTop
-    ? `-5,22 0,42 5,22`
-    : `-5,-22 0,-42 5,-22`;
-  const flameAnim1 = fromTop
-    ? `-5,22 0,42 5,22; -5,22 0,58 5,22; -5,22 0,42 5,22`
-    : `-5,-22 0,-42 5,-22; -5,-22 0,-58 5,-22; -5,-22 0,-42 5,-22`;
-  const flamePoints2 = fromTop
-    ? `-3,22 0,50 3,22`
-    : `-3,-22 0,-50 3,-22`;
-  const flameAnim2 = fromTop
-    ? `-3,22 0,50 3,22; -3,22 0,65 3,22; -3,22 0,50 3,22`
-    : `-3,-22 0,-50 3,-22; -3,-22 0,-65 3,-22; -3,-22 0,-50 3,-22`;
+  const common = {
+    position: 'fixed',
+    pointerEvents: 'none',
+    zIndex: 50,
+    animation: `asteroid-move 2s ease-in forwards`,
+    '--dy': `${dy}px`,
+  };
 
   return (
-    <g>
-      <animateMotion dur="2s" fill="freeze" path={`M ${cx},${startY} L ${cx},${endY}`} />
-      <polygon fill="#f97316" opacity="0.95">
-        <animate attributeName="points" values={flameAnim1} dur="0.3s" repeatCount="indefinite" />
-      </polygon>
-      <polygon fill="#fbbf24" opacity="0.8">
-        <animate attributeName="points" values={flameAnim2} dur="0.25s" begin="0.05s" repeatCount="indefinite" />
-      </polygon>
-      <image href="/asteroide.png" width="44" height="44" x="-22" y="-22">
-        <animateTransform attributeName="transform" type="rotate"
-          from="0" to="360" dur="2s" repeatCount="1" additive="sum" />
-      </image>
-    </g>
+    <>
+      {/* Flamme : décalée derrière l'astéroïde */}
+      <div style={{
+        ...common,
+        left: impactX - 30,
+        top: fromTop ? startY - 44 : startY + SIZE - 16,
+        width: 60,
+        height: 60,
+        background: 'radial-gradient(circle, #fef08a 0%, #f97316 45%, transparent 100%)',
+        borderRadius: '50%',
+        filter: 'blur(8px)',
+      }} />
+      {/* Astéroïde */}
+      <img src="/asteroide.png" alt="" style={{
+        ...common,
+        left: impactX - SIZE / 2,
+        top: startY,
+        width: SIZE,
+        height: SIZE,
+      }} />
+    </>
   );
 }
 
 export default function ShipMap({ zones, env, asteroids }) {
+  const svgRef = useRef(null);
+  const [impacts, setImpacts] = useState({});
+
+  // Calcule les positions pixel de chaque zone dès que le SVG est monté
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const pos = {};
+    for (const [id, xFrac] of Object.entries(ZONE_X_FRAC)) {
+      pos[id] = {
+        x: rect.left + xFrac * rect.width,
+        y: rect.top  + ZONE_Y_FRAC * rect.height,
+      };
+    }
+    setImpacts(pos);
+  }, []);
+
   return (
     <div className="w-full max-w-5xl mx-auto p-6 rounded-xl">
-      <svg viewBox="0 0 800 500" className="w-full h-auto">
-        <defs>
-          <clipPath id="ship-clip">
-            <rect x="0" y="0" width="800" height="500" />
-          </clipPath>
-        </defs>
-
+      <svg ref={svgRef} viewBox="0 0 800 500" className="w-full h-auto">
         {/* Voile sombre */}
         <rect x="0" y="0" width="800" height="500" fill="#000" opacity="0.2" />
 
@@ -182,12 +182,7 @@ export default function ShipMap({ zones, env, asteroids }) {
           const [cx, cy] = part.labelPos;
           return (
             <g key={id}>
-              <path
-                d={part.path}
-                stroke={stroke}
-                strokeWidth="2"
-                style={{ fill }}
-              >
+              <path d={part.path} stroke={stroke} strokeWidth="2" style={{ fill }}>
                 {isAlert && (
                   <animate attributeName="fill" values="#dc2626;#450a0a;#dc2626" dur="1s" repeatCount="indefinite" />
                 )}
@@ -203,13 +198,6 @@ export default function ShipMap({ zones, env, asteroids }) {
             </g>
           );
         })}
-
-        {/* Astéroïdes */}
-        <g clipPath="url(#ship-clip)">
-          {asteroids && Object.entries(asteroids).map(([id, active]) =>
-            active ? <AsteroidImpact key={id} part={SHIP_PARTS[id]} zoneId={id} /> : null
-          )}
-        </g>
 
         {/* Légende */}
         <g>
@@ -228,6 +216,13 @@ export default function ShipMap({ zones, env, asteroids }) {
           ))}
         </g>
       </svg>
+
+      {/* Astéroïdes */}
+      {asteroids && Object.entries(asteroids).map(([id, active]) =>
+        active && impacts[id]
+          ? <AsteroidImpact key={id} zoneId={id} impactX={impacts[id].x} impactY={impacts[id].y} />
+          : null
+      )}
     </div>
   );
 }
