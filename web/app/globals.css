@@ -35,6 +35,14 @@
   to   { transform: rotate(360deg); }
 }
 
+@keyframes ship-tangage {
+  0%, 100% { transform: rotate(0deg) translateX(0px); }
+  15%      { transform: rotate(-1.5deg) translateX(-3px); }
+  35%      { transform: rotate(1.8deg) translateX(4px); }
+  55%      { transform: rotate(-1.1deg) translateX(-2px); }
+  75%      { transform: rotate(1.2deg) translateX(2px); }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
