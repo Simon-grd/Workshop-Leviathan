@@ -20,10 +20,10 @@ const STATUS_STROKE = {
 };
 
 const ZONES = [
-  { id: 'passerelle',  label: 'PONT',        label2: 'VLAN 10', base: 'vital' },
-  { id: 'laboratoire', label: 'LABORATOIRE', label2: 'VLAN 20', base: 'ok' },
-  { id: 'support_vie', label: 'SUPPORT VIE', label2: 'VLAN 30', base: 'protected' },
-  { id: 'loisirs',     label: 'LOISIRS',     label2: 'VLAN 40', base: 'sacrificable' },
+  { id: 'passerelle',  label: 'PONT',        label2: '', base: 'vital' },
+  { id: 'laboratoire', label: 'LABORATOIRE', label2: '', base: 'ok' },
+  { id: 'support_vie', label: 'SUPPORT VIE', label2: '', base: 'protected' },
+  { id: 'loisirs',     label: 'LOISIRS',     label2: '', base: 'sacrificable' },
 ];
 
 const SHIP_PARTS = {
@@ -194,7 +194,7 @@ export default function ShipMap({ zones, env, asteroids }) {
               <text x={cx} y={cy + 2} textAnchor="middle" fill="rgba(255,255,255,0.5)" style={{ fontSize: 9, fontFamily: 'monospace' }}>
                 {label2}
               </text>
-              <ZoneMetrics zoneEnv={env?.[id]} cx={cx} cy={cy + 18} />
+              <ZoneMetrics zoneEnv={env?.[id]} cx={cx} cy={cy + 8} />
             </g>
           );
         })}
