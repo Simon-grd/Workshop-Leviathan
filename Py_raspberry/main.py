@@ -30,8 +30,8 @@ import paho.mqtt.client as mqtt
 # ---------------------------------------------------------------------------
 
 # Numéros de GPIO (numérotation BCM) pour chaque bouton poussoir.
-PIN_BOUTON_1 = 17  # Bouton bleu
-PIN_BOUTON_2 = 27  # Bouton jaune
+PIN_BOUTON_1 = 27  # Bouton bleu
+PIN_BOUTON_2 = 17  # Bouton jaune
 PIN_BOUTON_3 = 22  # Bouton rouge
 
 # Numéro de GPIO pour le fil data du capteur DHT11.
@@ -47,7 +47,7 @@ PIN_CAPTEUR_DHT = board.D23
 DUREE_ANTI_REBOND = 0.2
 
 # Seuil de température (en °C) au-delà duquel une alerte est affichée.
-SEUIL_ALERTE_TEMPERATURE = 35
+SEUIL_ALERTE_TEMPERATURE = 30
 
 # Intervalle entre deux lectures du capteur DHT11 (en secondes).
 # Le DHT11 est un capteur lent : il ne faut pas l'interroger plus souvent
@@ -65,7 +65,7 @@ MQTT_KEEPALIVE = 60  # durée max (s) sans message avant que le broker considèr
 MQTT_TOPIC_ASTEROIDE = "alerte/asteroide"   # bt1
 MQTT_TOPIC_RADIATION = "alerte/radiation"   # bt2
 MQTT_TOPIC_AVARIE = "alerte/avarie"         # bt3
-MQTT_TOPIC_INCENDIE = "alerte/incendie"     # capteur DHT11
+MQTT_TOPIC_INCENDIE = "alerte/incendie"     # capteur DHT22
 
 # ---------------------------------------------------------------------------
 # INITIALISATION DU CLIENT MQTT (nouveau)
@@ -187,14 +187,14 @@ bt3.when_pressed = on_bouton_3_appuye
 
 
 # ---------------------------------------------------------------------------
-# INITIALISATION DU CAPTEUR DHT11
+# INITIALISATION DU CAPTEUR DHT22
 # ---------------------------------------------------------------------------
-dht_capteur = adafruit_dht.DHT11(PIN_CAPTEUR_DHT)
+dht_capteur = adafruit_dht.DHT22(PIN_CAPTEUR_DHT)
 
 
 def lire_temperature():
     """
-    Effectue une lecture du capteur DHT11 et renvoie la température en °C,
+    Effectue une lecture du capteur DHT22 et renvoie la température en °C,
     ou None si la lecture a échoué (les échecs ponctuels sont normaux et
     fréquents avec ce type de capteur, il ne faut pas les traiter comme
     une erreur fatale).
@@ -202,11 +202,11 @@ def lire_temperature():
     try:
         return dht_capteur.temperature
     except RuntimeError as erreur:
-        # Le DHT11 échoue régulièrement à répondre à temps (erreur de
+        # Le DHT22 échoue régulièrement à répondre à temps (erreur de
         # checksum, timing, etc.). On log simplement l'erreur et on
         # réessaiera à la prochaine itération de la boucle, sans arrêter
         # le programme.
-        print(f"Lecture DHT11 échouée, nouvelle tentative au prochain cycle : {erreur}")
+        print(f"Lecture DHT22 échouée, nouvelle tentative au prochain cycle : {erreur}")
         return None
 
 

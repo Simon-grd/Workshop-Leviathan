@@ -1,0 +1,4 @@
+gpiozero
+RPi.GPIO
+adafruit-blinka
+adafruit-circuitpython-dht
