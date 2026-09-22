@@ -1,4 +1,4 @@
-# Léviathan v2 : Proxmox, playbook de crise et deux interfaces
+# Léviathan : Proxmox, playbook de crise et deux interfaces
 
 > Workshop 2026 · B3 · Groupe 6
 
