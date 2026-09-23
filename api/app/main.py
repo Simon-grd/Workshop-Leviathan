@@ -14,7 +14,7 @@ from playbook.surchauffe import evaluer_surchauffe
 from playbook.perte_module import evaluer_perte_noeud
 
 # --- CONFIGURATION DU MOTEUR MQTT ---
-MQTT_BROKER = "test.mosquitto.org" # Serveur de test public
+MQTT_BROKER = "10.220.226.253" # Serveur de test public
 MQTT_PORT = 1883
 mqtt_client = mqtt_lib.Client()
 
