@@ -1,5 +1,6 @@
 'use client';
 import { useRef, useState, useEffect } from 'react';
+import mqtt from 'mqtt';
 
 const STATUS_COLOR = {
   alert: '#dc2626',
@@ -83,7 +84,6 @@ function ZoneAlertEffects({ zoneId, alertType, labelPos }) {
   const [cx, cy] = labelPos;
 
   if (alertType === 'fire') {
-    // Flammes plus espacées pour couvrir le sas sans en sortir
     const flames = [
       { id: 'center', dx: 0, dy: 6, scale: 1, durationOffset: 0 },
       { id: 'left', dx: -38, dy: 16, scale: 0.75, durationOffset: 0.15 },
@@ -94,7 +94,6 @@ function ZoneAlertEffects({ zoneId, alertType, labelPos }) {
 
     return (
       <g transform={`translate(${cx} ${cy})`}>
-        {/* Aura de chaleur agrandie proportionnellement à l'espacement */}
         <circle cx="0" cy="8" r="60" fill="rgba(251, 146, 60, 0.12)" stroke="rgba(251, 146, 60, 0.5)" strokeWidth="2">
           <animate attributeName="r" values="50;65;50" dur="1.2s" repeatCount="indefinite" />
           <animate attributeName="opacity" values="0.45;0.9;0.45" dur="1.2s" repeatCount="indefinite" />
@@ -245,12 +244,78 @@ function RadiationMarker({ zoneId, x, y }) {
   );
 }
 
-export default function ShipMap({ zones, env, asteroids, alertTypes }) {
+export default function ShipMap() {
+  const [zones, setZones] = useState({
+    passerelle: 'ok',
+    laboratoire: 'ok',
+    support_vie: 'ok',
+    loisirs: 'ok'
+  });
+  const [env, setEnv] = useState({});
+  const [asteroids, setAsteroids] = useState({});
+  const [alertTypes, setAlertTypes] = useState({});
+
   const svgRef = useRef(null);
   const previousAsteroidStateRef = useRef(false);
   const [impacts, setImpacts] = useState({});
   const [shipImpactPulse, setShipImpactPulse] = useState(false);
 
+  // Initialisation de la connexion MQTT
+  useEffect(() => {
+    // adresse Raspberry Pi
+    const RASPBERRY_IP = '10.0.0.1';
+    const client = mqtt.connect(`ws://${RASPBERRY_IP}:9001`);
+
+    client.on('connect', () => {
+      console.log('Connecté au Raspberry Pi via MQTT WebSocket');
+      client.subscribe('leviathan/secteurs/#');
+      client.subscribe('leviathan/alertes/#');
+    });
+
+    client.on('message', (topic, message) => {
+      try {
+        const payload = JSON.parse(message.toString());
+        const parts = topic.split('/');
+
+        // Topic de télémétrie (ex: leviathan/secteurs/laboratoire/telemetry)
+        if (parts[1] === 'secteurs' && parts[3] === 'telemetry') {
+          const zoneId = parts[2];
+          setEnv(prev => ({
+            ...prev,
+            [zoneId]: {
+              temperature: payload.temperature,
+              humidity: payload.humidity,
+              oxygen: payload.oxygen,
+              radiation: payload.radiation,
+            }
+          }));
+
+          if (payload.status) {
+            setZones(prev => ({ ...prev, [zoneId]: payload.status }));
+          }
+        }
+
+        // Topic d'alertes (ex: leviathan/alertes/laboratoire)
+        if (parts[1] === 'alertes') {
+          const zoneId = parts[2];
+          if (payload.type === 'asteroid') {
+            setAsteroids(prev => ({ ...prev, [zoneId]: payload.active }));
+          } else {
+            setAlertTypes(prev => ({ ...prev, [zoneId]: payload.active ? payload.type : null }));
+            setZones(prev => ({ ...prev, [zoneId]: payload.active ? 'alert' : 'ok' }));
+          }
+        }
+      } catch (err) {
+        console.error('Erreur de traitement MQTT:', err);
+      }
+    });
+
+    return () => {
+      if (client) client.end();
+    };
+  }, []);
+
+  // Calcul des points d'impact
   useEffect(() => {
     if (!svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
@@ -264,6 +329,7 @@ export default function ShipMap({ zones, env, asteroids, alertTypes }) {
     setImpacts(pos);
   }, []);
 
+  // Gestion du tangage lors des impacts d'astéroïdes
   useEffect(() => {
     const activeAsteroids = Object.values(asteroids || {}).some(Boolean);
 
