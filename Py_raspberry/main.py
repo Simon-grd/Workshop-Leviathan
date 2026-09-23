@@ -1,19 +1,8 @@
 """
-Script de surveillance Raspberry Pi :
- - 3 boutons poussoirs (bt1, bt2, bt3) avec détection individuelle et anti-rebond
- - 1 capteur de température/humidité DHT11 avec alerte si dépassement de seuil
- - Publication MQTT de chaque alerte (boutons + température) vers un broker Mosquitto
+Script de surveillance Raspberry Pi : boutons poussoirs + capteur de
+température, avec publication de chaque alerte en MQTT.
 
-Installation des dépendances (à exécuter une seule fois sur le Raspberry Pi) :
-    pip install gpiozero
-    pip install adafruit-circuitpython-dht
-    sudo apt-get install libgpiod2   # dépendance système requise par adafruit-circuitpython-dht
-    pip install paho-mqtt
-
-Installation et lancement du broker MQTT Mosquitto sur le Raspberry Pi (si ce
-n'est pas déjà fait) :
-    sudo apt install mosquitto mosquitto-clients
-    sudo systemctl enable --now mosquitto   # démarre Mosquitto et l'active au boot
+Voir README.md pour l'installation et le détail des alertes/topics.
 """
 
 import time
@@ -29,52 +18,43 @@ import paho.mqtt.client as mqtt
 # CONSTANTES DE CONFIGURATION (à adapter facilement selon le câblage réel)
 # ---------------------------------------------------------------------------
 
-# Numéros de GPIO (numérotation BCM) pour chaque bouton poussoir.
+# GPIO (numérotation BCM) de chaque bouton poussoir.
 PIN_BOUTON_1 = 27  # Bouton bleu
 PIN_BOUTON_2 = 17  # Bouton jaune
 PIN_BOUTON_3 = 22  # Bouton rouge
 
-# Numéro de GPIO pour le fil data du capteur DHT11.
-# Estimation basée sur le câblage : GPIO23. Si la lecture du capteur plante
-# (erreur au moment de dht_capteur.temperature / dht_capteur.humidity),
-# cela signifie très probablement que le fil data est en réalité branché
-# sur un autre GPIO (essayer GPIO24 ou GPIO18 dans ce cas), et non que le
-# code est fautif.
+# GPIO du fil data du capteur DHT22. Si la lecture plante systématiquement,
+# le fil est probablement branché sur un autre GPIO (essayer GPIO24/GPIO18).
 PIN_CAPTEUR_DHT = board.D23
 
-# Durée anti-rebond en secondes : ignore les changements d'état trop rapprochés
-# dus aux micro-oscillations mécaniques du contact du bouton.
+# Anti-rebond (secondes) : ignore les changements d'état trop rapprochés dus
+# aux micro-oscillations mécaniques du bouton.
 DUREE_ANTI_REBOND = 0.2
 
-# Seuil de température (en °C) au-delà duquel une alerte est affichée.
+# Seuil de température (°C) au-delà duquel l'alerte incendie se déclenche.
 SEUIL_ALERTE_TEMPERATURE = 30
 
-# Intervalle entre deux lectures du capteur DHT11 (en secondes).
-# Le DHT11 est un capteur lent : il ne faut pas l'interroger plus souvent
-# qu'environ toutes les 2 secondes, sous peine d'obtenir des erreurs de lecture.
+# Intervalle entre deux lectures du DHT22 (secondes). Capteur lent : ne pas
+# l'interroger trop souvent sous peine d'erreurs de lecture.
 INTERVALLE_LECTURE_DHT = 2
 
-# --- Configuration MQTT (nouveau) ------------------------------------------
-# Adresse et port du broker Mosquitto. En local sur le Raspberry Pi lui-même,
-# c'est "localhost" avec le port MQTT standard 1883.
+# --- Configuration MQTT ------------------------------------------
 MQTT_BROKER_HOTE = "localhost"
 MQTT_BROKER_PORT = 1883
-MQTT_KEEPALIVE = 60  # durée max (s) sans message avant que le broker considère le client déconnecté
+MQTT_KEEPALIVE = 60  # durée max (s) sans message avant déconnexion côté broker
 
 # Un topic MQTT par thème d'alerte, associé à chaque bouton / au capteur.
 MQTT_TOPIC_ASTEROIDE = "alerte/asteroide"   # bt1
 MQTT_TOPIC_RADIATION = "alerte/radiation"   # bt2
-MQTT_TOPIC_AVARIE = "alerte/avarie"         # bt3
+MQTT_TOPIC_SABOTAGE = "alerte/sabotage"     # bt3
 MQTT_TOPIC_INCENDIE = "alerte/incendie"     # capteur DHT22
 
 # ---------------------------------------------------------------------------
-# INITIALISATION DU CLIENT MQTT (nouveau)
+# CLIENT MQTT
 # ---------------------------------------------------------------------------
-# On crée le client et on tente la connexion au broker dès le démarrage.
-# mqtt_connecte permet de savoir, partout ailleurs dans le script, si la
-# connexion a réussi : si le broker est injoignable, on ne plante pas le
-# programme, on désactive juste l'envoi MQTT (les boutons et le capteur
-# continuent de fonctionner et de s'afficher normalement dans la console).
+# mqtt_connecte indique si la connexion au broker est active : si le broker
+# est injoignable, le programme ne plante pas, il désactive juste l'envoi
+# MQTT (boutons et capteur continuent de fonctionner normalement).
 mqtt_client = mqtt.Client()
 mqtt_connecte = False
 
@@ -102,24 +82,21 @@ mqtt_client.on_disconnect = on_mqtt_disconnect
 
 try:
     mqtt_client.connect(MQTT_BROKER_HOTE, MQTT_BROKER_PORT, MQTT_KEEPALIVE)
-    # loop_start() lance un thread interne qui gère la connexion (reconnexion
-    # automatique incluse) en arrière-plan, sans bloquer le reste du script.
+    # loop_start() gère la connexion (reconnexion incluse) dans un thread à
+    # part, sans bloquer le reste du script.
     mqtt_client.loop_start()
 except Exception as erreur:
-    # Le broker n'est pas joignable au démarrage (Mosquitto non lancé, mauvaise
-    # adresse, etc.) : on informe clairement dans la console et on continue
-    # sans MQTT plutôt que de planter le programme.
+    # Broker injoignable au démarrage : on log et on continue sans MQTT
+    # plutôt que de planter le programme.
     print(f"MQTT : impossible de se connecter au broker au démarrage ({erreur}). "
           f"Le programme continue sans MQTT.")
 
 
 def publier_alerte_mqtt(topic, payload):
     """
-    Publie un message JSON sur le topic MQTT donné, si une connexion au
-    broker est disponible. Ne lève jamais d'exception : en cas de souci
-    (broker coupé en cours de route, etc.), on log l'erreur en console et
-    on continue, sans jamais interrompre la boucle principale ni les
-    callbacks des boutons.
+    Publie un message JSON sur le topic donné si le broker est connecté.
+    Ne lève jamais d'exception, pour ne jamais interrompre la boucle
+    principale ni les callbacks des boutons.
     """
     if not mqtt_connecte:
         print(f"MQTT : non connecté, message non envoyé sur {topic}.")
@@ -131,13 +108,11 @@ def publier_alerte_mqtt(topic, payload):
 
 
 # ---------------------------------------------------------------------------
-# INITIALISATION DES BOUTONS
+# BOUTONS
 # ---------------------------------------------------------------------------
-# pull_up=True active la résistance de pull-up interne du GPIO : la broche est
-# au niveau haut (1) au repos, et passe au niveau bas (0) quand le bouton
-# relie la broche à la masse (GND) lors de l'appui. gpiozero gère cette
-# logique automatiquement (is_pressed devient True lors de l'appui).
-# bounce_time applique l'anti-rebond directement au niveau de la librairie.
+# pull_up=True : broche au niveau haut au repos, niveau bas quand le bouton
+# relie la broche à la masse (gpiozero gère ça : is_pressed devient True à
+# l'appui). bounce_time applique l'anti-rebond au niveau de la librairie.
 bt1 = Button(PIN_BOUTON_1, pull_up=True, bounce_time=DUREE_ANTI_REBOND)
 bt2 = Button(PIN_BOUTON_2, pull_up=True, bounce_time=DUREE_ANTI_REBOND)
 bt3 = Button(PIN_BOUTON_3, pull_up=True, bounce_time=DUREE_ANTI_REBOND)
@@ -146,13 +121,10 @@ bt3 = Button(PIN_BOUTON_3, pull_up=True, bounce_time=DUREE_ANTI_REBOND)
 # ---------------------------------------------------------------------------
 # CALLBACKS DES BOUTONS
 # ---------------------------------------------------------------------------
-# Chaque fonction est appelée automatiquement par gpiozero dans un thread
-# interne dès que le bouton correspondant est appuyé (front descendant filtré
-# par l'anti-rebond). On n'a donc pas besoin de les tester manuellement dans
-# la boucle principale : gpiozero s'en charge en arrière-plan.
+# Appelées automatiquement par gpiozero (thread interne) dès l'appui sur le
+# bouton correspondant : pas besoin de les tester dans la boucle principale.
 def on_bouton_1_appuye():
     print("Bouton 1 appuyé")
-    # Publication MQTT (nouveau) : alerte thème "astéroïde".
     publier_alerte_mqtt(MQTT_TOPIC_ASTEROIDE, {
         "type": "asteroide",
         "message": "Astéroïde détecté",
@@ -162,7 +134,6 @@ def on_bouton_1_appuye():
 
 def on_bouton_2_appuye():
     print("Bouton 2 appuyé")
-    # Publication MQTT (nouveau) : alerte thème "fuite de radiation".
     publier_alerte_mqtt(MQTT_TOPIC_RADIATION, {
         "type": "radiation",
         "message": "Fuite de radiation détectée",
@@ -172,10 +143,9 @@ def on_bouton_2_appuye():
 
 def on_bouton_3_appuye():
     print("Bouton 3 appuyé")
-    # Publication MQTT (nouveau) : alerte thème "avarie spatiale".
-    publier_alerte_mqtt(MQTT_TOPIC_AVARIE, {
-        "type": "avarie",
-        "message": "Avarie critique détectée : panne du système de survie du vaisseau",
+    publier_alerte_mqtt(MQTT_TOPIC_SABOTAGE, {
+        "type": "sabotage",
+        "message": "Sabotage détecté : panne du système de survie du vaisseau",
         "timestamp": datetime.now().isoformat(),
     })
 
@@ -202,10 +172,8 @@ def lire_temperature():
     try:
         return dht_capteur.temperature
     except RuntimeError as erreur:
-        # Le DHT22 échoue régulièrement à répondre à temps (erreur de
-        # checksum, timing, etc.). On log simplement l'erreur et on
-        # réessaiera à la prochaine itération de la boucle, sans arrêter
-        # le programme.
+        # Échecs de lecture ponctuels normaux avec ce capteur : on log et on
+        # réessaie au prochain cycle, sans arrêter le programme.
         print(f"Lecture DHT22 échouée, nouvelle tentative au prochain cycle : {erreur}")
         return None
 
@@ -213,11 +181,14 @@ def lire_temperature():
 # ---------------------------------------------------------------------------
 # BOUCLE PRINCIPALE : lecture continue de la température
 # ---------------------------------------------------------------------------
-# La détection des boutons est entièrement gérée par les callbacks gpiozero
-# ci-dessus (exécutés dans des threads séparés), donc cette boucle ne
-# s'occupe que du capteur de température, sans bloquer la réactivité des
-# boutons.
+# Les boutons sont gérés en arrière-plan par leurs callbacks gpiozero, donc
+# cette boucle ne s'occupe que du capteur de température.
 print("Démarrage de la surveillance (boutons + température). Ctrl+C pour quitter.")
+
+# Mémorise si on est déjà en alerte incendie, pour ne déclencher un message
+# qu'au moment où l'état change (front montant/descendant) et non à chaque
+# lecture tant que la température reste au-dessus du seuil.
+en_alerte_incendie = False
 
 try:
     while True:
@@ -226,12 +197,24 @@ try:
         if temperature is not None:
             print(f"Température actuelle : {temperature} °C")
 
-            if temperature > SEUIL_ALERTE_TEMPERATURE:
+            if temperature > SEUIL_ALERTE_TEMPERATURE and not en_alerte_incendie:
+                # Front montant : passage de "normal" à "en alerte".
+                en_alerte_incendie = True
                 print(f"!!! ALERTE : température de {temperature} °C supérieure au seuil de {SEUIL_ALERTE_TEMPERATURE} °C !!!")
-                # Publication MQTT (nouveau) : alerte thème "incendie", avec la température mesurée dans le payload.
                 publier_alerte_mqtt(MQTT_TOPIC_INCENDIE, {
                     "type": "incendie",
                     "message": "Température anormalement élevée détectée",
+                    "temperature": temperature,
+                    "timestamp": datetime.now().isoformat(),
+                })
+
+            elif temperature <= SEUIL_ALERTE_TEMPERATURE and en_alerte_incendie:
+                # Front descendant : retour de "en alerte" à "normal".
+                en_alerte_incendie = False
+                print(f"Fin d'alerte : température de {temperature} °C revenue sous le seuil de {SEUIL_ALERTE_TEMPERATURE} °C. Retour à la normale.")
+                publier_alerte_mqtt(MQTT_TOPIC_INCENDIE, {
+                    "type": "incendie_fin",
+                    "message": "Retour à la normale : température repassée sous le seuil",
                     "temperature": temperature,
                     "timestamp": datetime.now().isoformat(),
                 })
@@ -243,9 +226,8 @@ except KeyboardInterrupt:
     print("\nArrêt du programme demandé par l'utilisateur.")
 
 finally:
-    # Libère proprement les ressources du capteur (évite les erreurs si le
-    # script est relancé juste après).
+    # Libère les ressources du capteur (évite les erreurs si le script est
+    # relancé juste après) et ferme proprement la connexion MQTT.
     dht_capteur.exit()
-    # Arrête proprement le thread MQTT et ferme la connexion au broker (nouveau).
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
