@@ -16,11 +16,46 @@ Script Python pour Raspberry Pi qui surveille :
 
 Ces numéros sont définis en haut de [main.py](main.py) et peuvent être changés facilement si le câblage réel est différent. Si la lecture du DHT22 échoue systématiquement, le fil data est probablement branché sur un autre GPIO (essayer GPIO24 ou GPIO18).
 
-## Installation
+## Installation sur le Raspberry Pi
 
-À faire une seule fois sur le Raspberry Pi.
+### 1. Récupérer le projet (git clone / git pull)
 
-### 1. Dépendances Python
+Première fois :
+
+```bash
+git clone <url-du-repo>
+cd Py_raspberry
+```
+
+Pour les fois suivantes (mise à jour du code) :
+
+```bash
+cd Py_raspberry
+git pull
+```
+
+**⚠️ Important : après chaque `git pull`, recréer l'environnement virtuel (venv).** Un `git pull` peut changer les dépendances (nouvelles librairies, versions différentes) ; un venv gardé d'avant peut être incomplet ou incohérent avec le code mis à jour. Pour repartir propre, supprimer l'ancien venv et en recréer un neuf (voir étape suivante).
+
+### 2. Créer et activer l'environnement virtuel (venv)
+
+Si un dossier `venv` existe déjà (par exemple après un `git pull`), le supprimer avant de le recréer :
+
+```bash
+rm -rf venv
+```
+
+Créer le venv et l'activer :
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+Une fois activé, l'invite de commande affiche `(venv)` devant le prompt. Le venv doit être réactivé (`source venv/bin/activate`) à chaque nouvelle session de terminal, avant de lancer le script ou d'installer des dépendances.
+
+### 3. Dépendances Python
+
+Avec le venv activé :
 
 ```bash
 pip install gpiozero
@@ -28,13 +63,13 @@ pip install adafruit-circuitpython-dht
 pip install paho-mqtt
 ```
 
-### 2. Dépendance système du capteur DHT
+### 4. Dépendance système du capteur DHT
 
 ```bash
 sudo apt-get install libgpiod2
 ```
 
-### 3. Broker MQTT Mosquitto
+### 5. Broker MQTT Mosquitto
 
 Le script publie ses alertes vers un broker MQTT local. Si Mosquitto n'est pas déjà installé :
 
@@ -44,6 +79,8 @@ sudo systemctl enable --now mosquitto
 ```
 
 ## Lancement
+
+Avec le venv activé (`source venv/bin/activate`) :
 
 ```bash
 python main.py

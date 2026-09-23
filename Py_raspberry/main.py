@@ -102,7 +102,9 @@ def publier_alerte_mqtt(topic, payload):
         print(f"MQTT : non connecté, message non envoyé sur {topic}.")
         return
     try:
-        mqtt_client.publish(topic, json.dumps(payload))
+        # ensure_ascii=False : garde les accents tels quels dans le JSON
+        # (ex. "é") au lieu de les échapper en \uXXXX.
+        mqtt_client.publish(topic, json.dumps(payload, ensure_ascii=False))
     except Exception as erreur:
         print(f"MQTT : échec de publication sur {topic} ({erreur}).")
 
