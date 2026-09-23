@@ -38,6 +38,12 @@ SEUIL_ALERTE_TEMPERATURE = 30
 # l'interroger trop souvent sous peine d'erreurs de lecture.
 INTERVALLE_LECTURE_DHT = 2
 
+# Intervalle entre deux publications de la température "info" sur
+# "capteur/temperature" (secondes). Indépendant de INTERVALLE_LECTURE_DHT :
+# le capteur est lu toutes les 2s, mais on n'envoie cette valeur au
+# dashboard que toutes les 10s.
+INTERVALLE_PUBLICATION_TEMPERATURE = 10
+
 # --- Configuration MQTT ------------------------------------------
 MQTT_BROKER_HOTE = "localhost"
 MQTT_BROKER_PORT = 1883
@@ -48,6 +54,11 @@ MQTT_TOPIC_ASTEROIDE = "alerte/asteroide"   # bt1
 MQTT_TOPIC_RADIATION = "alerte/radiation"   # bt2
 MQTT_TOPIC_SABOTAGE = "alerte/sabotage"     # bt3
 MQTT_TOPIC_INCENDIE = "alerte/incendie"     # capteur DHT22
+
+# Topic "info" (pas une alerte) : valeur de température envoyée en continu
+# toutes les INTERVALLE_PUBLICATION_TEMPERATURE secondes, pour un dashboard
+# de monitoring.
+MQTT_TOPIC_TEMPERATURE = "capteur/temperature"
 
 # ---------------------------------------------------------------------------
 # CLIENT MQTT
@@ -192,12 +203,33 @@ print("Démarrage de la surveillance (boutons + température). Ctrl+C pour quitt
 # lecture tant que la température reste au-dessus du seuil.
 en_alerte_incendie = False
 
+# Instant (horloge monotone, insensible aux changements d'heure système) de
+# la dernière publication sur "capteur/temperature". Initialisé à une valeur
+# assez ancienne pour que la toute première lecture valide soit publiée
+# immédiatement, sans attendre 10 secondes après le démarrage.
+derniere_publication_temperature = time.monotonic() - INTERVALLE_PUBLICATION_TEMPERATURE
+
 try:
     while True:
         temperature = lire_temperature()
 
         if temperature is not None:
             print(f"Température actuelle : {temperature} °C")
+
+            # --- Publication "info température" toutes les 10s ---------------
+            # Complètement indépendante de l'alerte incendie ci-dessous : on
+            # compare le temps écoulé depuis la dernière publication à
+            # INTERVALLE_PUBLICATION_TEMPERATURE, peu importe si la
+            # température est stable, en hausse ou en baisse. Si la lecture
+            # du capteur a échoué (temperature is None), ce bloc n'est pas
+            # exécuté du tout, donc rien n'est publié pour ce cycle-là.
+            maintenant = time.monotonic()
+            if maintenant - derniere_publication_temperature >= INTERVALLE_PUBLICATION_TEMPERATURE:
+                derniere_publication_temperature = maintenant
+                publier_alerte_mqtt(MQTT_TOPIC_TEMPERATURE, {
+                    "temperature": temperature,
+                    "timestamp": datetime.now().isoformat(),
+                })
 
             if temperature > SEUIL_ALERTE_TEMPERATURE and not en_alerte_incendie:
                 # Front montant : passage de "normal" à "en alerte".

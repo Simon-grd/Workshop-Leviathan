@@ -110,6 +110,21 @@ L'alerte incendie est **edge-triggered** : elle n'est publiée/affichée qu'au m
 
 Le seuil (`SEUIL_ALERTE_TEMPERATURE`, en °C) et l'intervalle de lecture du capteur (`INTERVALLE_LECTURE_DHT`, en secondes) sont réglables en haut de [main.py](main.py).
 
+## Topic de monitoring continu : `capteur/temperature`
+
+En plus des alertes, la température est aussi publiée en continu sur le topic `capteur/temperature`, pour alimenter un dashboard avec une courbe/valeur en direct plutôt qu'un simple événement d'alerte.
+
+| Topic MQTT | Payload |
+|---|---|
+| `capteur/temperature` | `{"temperature": 22.4, "timestamp": "2026-09-23T14:32:00"}` |
+
+Différences avec l'alerte incendie :
+- **Pas edge-triggered** : la valeur est envoyée à intervalle régulier (toutes les `INTERVALLE_PUBLICATION_TEMPERATURE` secondes, 10s par défaut), que la température soit stable, en hausse ou en baisse.
+- **Intervalle indépendant** de la lecture du capteur : le DHT22 est lu toutes les `INTERVALLE_LECTURE_DHT` secondes (2s par défaut), mais seule une lecture sur ~5 est effectivement publiée sur ce topic.
+- **Rien n'est publié si la lecture échoue** : si le capteur renvoie une erreur sur un cycle donné, ce cycle est simplement ignoré pour ce topic (pas de valeur manquante/fausse envoyée).
+
+Les deux intervalles (`INTERVALLE_LECTURE_DHT` et `INTERVALLE_PUBLICATION_TEMPERATURE`) sont réglables en haut de [main.py](main.py).
+
 ## Structure du fichier
 
 - **Configuration** : constantes GPIO, seuil, intervalle, config MQTT
