@@ -38,11 +38,11 @@ SEUIL_ALERTE_TEMPERATURE = 30
 # l'interroger trop souvent sous peine d'erreurs de lecture.
 INTERVALLE_LECTURE_DHT = 2
 
-# Intervalle entre deux publications de la température "info" sur
-# "capteur/temperature" (secondes). Indépendant de INTERVALLE_LECTURE_DHT :
-# le capteur est lu toutes les 2s, mais on n'envoie cette valeur au
-# dashboard que toutes les 10s.
-INTERVALLE_PUBLICATION_TEMPERATURE = 10
+# Intervalle entre deux publications des valeurs "info" du capteur
+# (température + humidité) sur MQTT (secondes). Indépendant de
+# INTERVALLE_LECTURE_DHT : le capteur est lu toutes les 2s, mais on n'envoie
+# ces valeurs au dashboard que toutes les 10s.
+INTERVALLE_PUBLICATION_CAPTEUR = 10
 
 # --- Configuration MQTT ------------------------------------------
 MQTT_BROKER_HOTE = "localhost"
@@ -55,10 +55,10 @@ MQTT_TOPIC_RADIATION = "alerte/radiation"   # bt2
 MQTT_TOPIC_SABOTAGE = "alerte/sabotage"     # bt3
 MQTT_TOPIC_INCENDIE = "alerte/incendie"     # capteur DHT22
 
-# Topic "info" (pas une alerte) : valeur de température envoyée en continu
-# toutes les INTERVALLE_PUBLICATION_TEMPERATURE secondes, pour un dashboard
-# de monitoring.
+# Topics "info" (pas des alertes) : valeurs envoyées en continu toutes les
+# INTERVALLE_PUBLICATION_CAPTEUR secondes, pour un dashboard de monitoring.
 MQTT_TOPIC_TEMPERATURE = "capteur/temperature"
+MQTT_TOPIC_HUMIDITE = "capteur/humidite"
 
 # ---------------------------------------------------------------------------
 # CLIENT MQTT
@@ -66,7 +66,14 @@ MQTT_TOPIC_TEMPERATURE = "capteur/temperature"
 # mqtt_connecte indique si la connexion au broker est active : si le broker
 # est injoignable, le programme ne plante pas, il désactive juste l'envoi
 # MQTT (boutons et capteur continuent de fonctionner normalement).
-mqtt_client = mqtt.Client()
+try:
+    # paho-mqtt >= 2.0 exige de préciser la version de l'API de callback,
+    # sinon un avertissement de dépréciation est affiché à chaque lancement.
+    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+except AttributeError:
+    # paho-mqtt < 2.0 : cette API n'existe pas encore, l'ancien constructeur
+    # suffit.
+    mqtt_client = mqtt.Client()
 mqtt_connecte = False
 
 
@@ -191,6 +198,19 @@ def lire_temperature():
         return None
 
 
+def lire_humidite():
+    """
+    Lit l'humidité (%) sur le même capteur DHT22, renvoie None en cas
+    d'échec (même capteur, mêmes échecs ponctuels possibles que pour la
+    température).
+    """
+    try:
+        return dht_capteur.humidity
+    except RuntimeError as erreur:
+        print(f"Lecture humidité DHT22 échouée, nouvelle tentative au prochain cycle : {erreur}")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # BOUCLE PRINCIPALE : lecture continue de la température
 # ---------------------------------------------------------------------------
@@ -204,54 +224,64 @@ print("Démarrage de la surveillance (boutons + température). Ctrl+C pour quitt
 en_alerte_incendie = False
 
 # Instant (horloge monotone, insensible aux changements d'heure système) de
-# la dernière publication sur "capteur/temperature". Initialisé à une valeur
-# assez ancienne pour que la toute première lecture valide soit publiée
-# immédiatement, sans attendre 10 secondes après le démarrage.
-derniere_publication_temperature = time.monotonic() - INTERVALLE_PUBLICATION_TEMPERATURE
+# la dernière publication "info capteur" (température + humidité). Initialisé
+# à une valeur assez ancienne pour que la toute première lecture valide soit
+# publiée immédiatement, sans attendre 10 secondes après le démarrage.
+derniere_publication_capteur = time.monotonic() - INTERVALLE_PUBLICATION_CAPTEUR
 
 try:
     while True:
         temperature = lire_temperature()
+        humidite = lire_humidite()
 
         if temperature is not None:
             print(f"Température actuelle : {temperature} °C")
+        if humidite is not None:
+            print(f"Humidité actuelle : {humidite} %")
 
-            # --- Publication "info température" toutes les 10s ---------------
-            # Complètement indépendante de l'alerte incendie ci-dessous : on
-            # compare le temps écoulé depuis la dernière publication à
-            # INTERVALLE_PUBLICATION_TEMPERATURE, peu importe si la
-            # température est stable, en hausse ou en baisse. Si la lecture
-            # du capteur a échoué (temperature is None), ce bloc n'est pas
-            # exécuté du tout, donc rien n'est publié pour ce cycle-là.
-            maintenant = time.monotonic()
-            if maintenant - derniere_publication_temperature >= INTERVALLE_PUBLICATION_TEMPERATURE:
-                derniere_publication_temperature = maintenant
+        # --- Publication "info capteur" toutes les 10s ------------------------
+        # Complètement indépendante de l'alerte incendie ci-dessous : on
+        # compare le temps écoulé depuis la dernière publication à
+        # INTERVALLE_PUBLICATION_CAPTEUR, peu importe si les valeurs sont
+        # stables, en hausse ou en baisse. Température et humidité sont
+        # publiées indépendamment l'une de l'autre : si une des deux lectures
+        # a échoué ce cycle-là (valeur à None), seule celle-ci est ignorée,
+        # sans bloquer la publication de l'autre.
+        maintenant = time.monotonic()
+        if maintenant - derniere_publication_capteur >= INTERVALLE_PUBLICATION_CAPTEUR:
+            derniere_publication_capteur = maintenant
+            if temperature is not None:
                 publier_alerte_mqtt(MQTT_TOPIC_TEMPERATURE, {
                     "temperature": temperature,
                     "timestamp": datetime.now().isoformat(),
                 })
-
-            if temperature > SEUIL_ALERTE_TEMPERATURE and not en_alerte_incendie:
-                # Front montant : passage de "normal" à "en alerte".
-                en_alerte_incendie = True
-                print(f"!!! ALERTE : température de {temperature} °C supérieure au seuil de {SEUIL_ALERTE_TEMPERATURE} °C !!!")
-                publier_alerte_mqtt(MQTT_TOPIC_INCENDIE, {
-                    "type": "incendie",
-                    "message": "Température anormalement élevée détectée",
-                    "temperature": temperature,
+            if humidite is not None:
+                publier_alerte_mqtt(MQTT_TOPIC_HUMIDITE, {
+                    "humidite": humidite,
                     "timestamp": datetime.now().isoformat(),
                 })
 
-            elif temperature <= SEUIL_ALERTE_TEMPERATURE and en_alerte_incendie:
-                # Front descendant : retour de "en alerte" à "normal".
-                en_alerte_incendie = False
-                print(f"Fin d'alerte : température de {temperature} °C revenue sous le seuil de {SEUIL_ALERTE_TEMPERATURE} °C. Retour à la normale.")
-                publier_alerte_mqtt(MQTT_TOPIC_INCENDIE, {
-                    "type": "incendie_fin",
-                    "message": "Retour à la normale : température repassée sous le seuil",
-                    "temperature": temperature,
-                    "timestamp": datetime.now().isoformat(),
-                })
+        if temperature is not None and temperature > SEUIL_ALERTE_TEMPERATURE and not en_alerte_incendie:
+            # Front montant : passage de "normal" à "en alerte".
+            en_alerte_incendie = True
+            print(f"!!! ALERTE : température de {temperature} °C supérieure au seuil de {SEUIL_ALERTE_TEMPERATURE} °C !!!")
+            publier_alerte_mqtt(MQTT_TOPIC_INCENDIE, {
+                "type": "incendie",
+                "message": "Température anormalement élevée détectée",
+                "temperature": temperature,
+                "timestamp": datetime.now().isoformat(),
+            })
+
+        elif temperature is not None and temperature <= SEUIL_ALERTE_TEMPERATURE and en_alerte_incendie:
+            # Front descendant : retour de "en alerte" à "normal".
+            en_alerte_incendie = False
+            print(f"Fin d'alerte : température de {temperature} °C revenue sous le seuil de {SEUIL_ALERTE_TEMPERATURE} °C. Retour à la normale.")
+            publier_alerte_mqtt(MQTT_TOPIC_INCENDIE, {
+                "type": "incendie_fin",
+                "message": "Retour à la normale : température repassée sous le seuil",
+                "temperature": temperature,
+                "timestamp": datetime.now().isoformat(),
+            })
 
         time.sleep(INTERVALLE_LECTURE_DHT)
 

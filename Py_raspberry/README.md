@@ -110,25 +110,31 @@ L'alerte incendie est **edge-triggered** : elle n'est publiée/affichée qu'au m
 
 Le seuil (`SEUIL_ALERTE_TEMPERATURE`, en °C) et l'intervalle de lecture du capteur (`INTERVALLE_LECTURE_DHT`, en secondes) sont réglables en haut de [main.py](main.py).
 
-## Topic de monitoring continu : `capteur/temperature`
+## Topics de monitoring continu : `capteur/temperature` et `capteur/humidite`
 
-En plus des alertes, la température est aussi publiée en continu sur le topic `capteur/temperature`, pour alimenter un dashboard avec une courbe/valeur en direct plutôt qu'un simple événement d'alerte.
+En plus des alertes, la température **et** l'humidité sont aussi publiées en continu, pour alimenter un dashboard avec des valeurs/courbes en direct plutôt qu'un simple événement d'alerte.
 
 | Topic MQTT | Payload |
 |---|---|
 | `capteur/temperature` | `{"temperature": 22.4, "timestamp": "2026-09-23T14:32:00"}` |
+| `capteur/humidite` | `{"humidite": 45.0, "timestamp": "2026-09-23T14:32:00"}` |
 
 Différences avec l'alerte incendie :
-- **Pas edge-triggered** : la valeur est envoyée à intervalle régulier (toutes les `INTERVALLE_PUBLICATION_TEMPERATURE` secondes, 10s par défaut), que la température soit stable, en hausse ou en baisse.
-- **Intervalle indépendant** de la lecture du capteur : le DHT22 est lu toutes les `INTERVALLE_LECTURE_DHT` secondes (2s par défaut), mais seule une lecture sur ~5 est effectivement publiée sur ce topic.
-- **Rien n'est publié si la lecture échoue** : si le capteur renvoie une erreur sur un cycle donné, ce cycle est simplement ignoré pour ce topic (pas de valeur manquante/fausse envoyée).
+- **Pas edge-triggered** : les valeurs sont envoyées à intervalle régulier (toutes les `INTERVALLE_PUBLICATION_CAPTEUR` secondes, 10s par défaut), qu'elles soient stables, en hausse ou en baisse.
+- **Intervalle indépendant** de la lecture du capteur : le DHT22 est lu toutes les `INTERVALLE_LECTURE_DHT` secondes (2s par défaut), mais seule une lecture sur ~5 est effectivement publiée sur ces topics.
+- **Rien n'est publié si la lecture échoue** : si le capteur renvoie une erreur sur un cycle donné, ce cycle est simplement ignoré pour la valeur concernée (pas de valeur manquante/fausse envoyée). Température et humidité sont indépendantes : si l'une échoue, l'autre est publiée normalement.
 
-Les deux intervalles (`INTERVALLE_LECTURE_DHT` et `INTERVALLE_PUBLICATION_TEMPERATURE`) sont réglables en haut de [main.py](main.py).
+Les deux intervalles (`INTERVALLE_LECTURE_DHT` et `INTERVALLE_PUBLICATION_CAPTEUR`) sont réglables en haut de [main.py](main.py).
 
 ## Structure du fichier
 
-- **Configuration** : constantes GPIO, seuil, intervalle, config MQTT
+- **Configuration** : constantes GPIO, seuil, intervalles, config MQTT
 - **Client MQTT** : connexion au broker + fonction `publier_alerte_mqtt()` qui envoie un message sans jamais planter le programme si le broker est indisponible
 - **Boutons** : initialisation `gpiozero.Button` + callbacks (`on_bouton_1_appuye`, etc.) déclenchés automatiquement à l'appui
-- **Capteur DHT22** : `lire_temperature()` lit la température, renvoie `None` en cas d'échec de lecture (normal et fréquent avec ce capteur)
-- **Boucle principale** : lit la température en continu et gère l'alerte incendie edge-triggered ; les boutons sont gérés en arrière-plan par gpiozero et n'ont pas besoin de cette boucle
+- **Capteur DHT22** : `lire_temperature()` et `lire_humidite()` lisent le capteur, renvoient `None` en cas d'échec de lecture (normal et fréquent avec ce capteur)
+- **Boucle principale** : lit température et humidité en continu, publie ces valeurs toutes les 10s et gère l'alerte incendie edge-triggered ; les boutons sont gérés en arrière-plan par gpiozero et n'ont pas besoin de cette boucle
+
+## Notes techniques
+
+- Le client MQTT est créé avec `mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)` pour rester compatible avec les versions récentes de `paho-mqtt` (2.x) sans afficher d'avertissement de dépréciation à chaque lancement ; le code retombe automatiquement sur l'ancien constructeur si une version plus ancienne de la librairie est installée.
+- `json.dumps(..., ensure_ascii=False)` est utilisé pour que les accents (é, à...) apparaissent normalement dans les messages MQTT au lieu d'être échappés en `\uXXXX`.
