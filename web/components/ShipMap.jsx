@@ -1,6 +1,5 @@
 'use client';
 import { useRef, useState, useEffect } from 'react';
-import mqtt from 'mqtt';
 
 const STATUS_COLOR = {
   alert: '#dc2626',
@@ -146,9 +145,20 @@ function ZoneAlertEffects({ zoneId, alertType, labelPos }) {
   if (alertType === 'asteroid') {
     return (
       <g>
-        <circle cx={cx} cy={cy + 18} r="22" fill="rgba(252, 211, 77, 0.2)" stroke="rgba(252, 211, 77, 0.8)" strokeWidth="1.5">
-          <animate attributeName="r" values="18;26;18" dur="1s" repeatCount="indefinite" />
-        </circle>
+        {/* Onde de choc unique, calée sur l'impact de l'astéroïde (~2 s). */}
+        <circle
+          cx={cx}
+          cy={cy + 18}
+          r="22"
+          fill="rgba(252, 211, 77, 0.2)"
+          stroke="rgba(252, 211, 77, 0.8)"
+          strokeWidth="1.5"
+          style={{
+            transformBox: 'fill-box',
+            transformOrigin: 'center',
+            animation: 'onde-meteorite 1s ease-out 1.9s both',
+          }}
+        />
       </g>
     );
   }
@@ -197,13 +207,15 @@ function AsteroidImpact({ zoneId, impactX, impactY }) {
   );
 }
 
-function RadiationMarker({ zoneId, x, y }) {
+// Positionné en absolu par rapport au conteneur du SVG (fractions de sa taille),
+// et non en `fixed` : sinon le marqueur reste collé à l'écran quand on scrolle.
+function RadiationMarker({ zoneId, xFrac, yFrac }) {
   const orbiters = Array.from({ length: 4 }, (_, index) => {
     const angle = (index / 4) * Math.PI * 2;
     const radius = 18 + (index % 2) * 8;
     return {
-      left: x + Math.cos(angle) * radius,
-      top: y + Math.sin(angle) * radius,
+      dx: Math.cos(angle) * radius,
+      dy: Math.sin(angle) * radius,
       size: 26 + (index % 2) * 10,
       delay: `${index * 0.28}s`,
       duration: `${2.3 + (index % 2) * 0.4}s`,
@@ -225,9 +237,9 @@ function RadiationMarker({ zoneId, x, y }) {
         <div
           key={`${zoneId}-radiation-${index}`}
           style={{
-            position: 'fixed',
-            left: orbiter.left - orbiter.size / 2,
-            top: orbiter.top - orbiter.size / 2,
+            position: 'absolute',
+            left: `calc(${xFrac * 100}% + ${orbiter.dx - orbiter.size / 2}px)`,
+            top: `calc(${yFrac * 100}% + ${orbiter.dy - orbiter.size / 2}px)`,
             width: orbiter.size,
             height: orbiter.size,
             zIndex: 40,
@@ -244,76 +256,78 @@ function RadiationMarker({ zoneId, x, y }) {
   );
 }
 
-export default function ShipMap() {
-  const [zones, setZones] = useState({
-    passerelle: 'ok',
-    laboratoire: 'ok',
-    support_vie: 'ok',
-    loisirs: 'ok'
+const OVNI_VOL = 2.6;       // s : trajet diagonal + atterrissage
+const ALIEN_SEJOUR = 2.4;   // s : descente, pause, disparition
+
+// Ancré au conteneur du SVG comme RadiationMarker. Monté quand l'alerte
+// sabotage apparaît sur la zone : l'animation ne se joue qu'une fois.
+function SabotageLanding({ zoneId, xFrac, yFrac }) {
+  const fromTop = ASTEROID_DIR[zoneId] === 'top';
+  const OVNI_W = 160, OVNI_H = 56;   // ovni.png : 480x168
+  const ALIEN_W = 40, ALIEN_H = 83;  // alien.png : 200x413
+  const anchor = (w, h, dy = 0) => ({
+    position: 'absolute',
+    left: `calc(${xFrac * 100}% - ${w / 2}px)`,
+    top: `calc(${yFrac * 100}% - ${h - dy}px)`,
+    width: w,
+    height: h,
+    pointerEvents: 'none',
   });
-  const [env, setEnv] = useState({});
-  const [asteroids, setAsteroids] = useState({});
-  const [alertTypes, setAlertTypes] = useState({});
+
+  return (
+    <>
+      <img
+        src="/ovni.png"
+        alt=""
+        style={{
+          ...anchor(OVNI_W, OVNI_H, 10),
+          zIndex: 45,
+          objectFit: 'contain',
+          filter: 'drop-shadow(0 0 12px rgba(167, 243, 208, 0.8))',
+          '--sx': '-340px',
+          '--sy': fromTop ? '-320px' : '320px',
+          animation: `ovni-arrivee ${OVNI_VOL}s ease-out forwards`,
+        }}
+      />
+      <img
+        src="/alien.png"
+        alt=""
+        style={{
+          ...anchor(ALIEN_W, ALIEN_H, 12),
+          zIndex: 46,
+          opacity: 0,
+          objectFit: 'contain',
+          filter: 'drop-shadow(0 0 8px rgba(74, 222, 128, 0.9))',
+          animation: `alien-descente ${ALIEN_SEJOUR}s ease-out ${OVNI_VOL}s forwards`,
+        }}
+      />
+    </>
+  );
+}
+
+const ZONES_PAR_DEFAUT = {
+  passerelle: 'vital',
+  laboratoire: 'ok',
+  support_vie: 'protected',
+  loisirs: 'sacrificable',
+};
+
+// `ship/page.jsx` passe déjà zones / env / asteroids / alertTypes, alimentés
+// par le hook `useShipStatus`. Le composant les ignorait : il redéclarait un
+// état interne du même nom, qui masquait les props et n'était alimenté que par
+// une connexion MQTT morte. Résultat : ni les boutons de scénario, ni les
+// données réelles n'atteignaient la carte.
+export default function ShipMap({
+  zones = ZONES_PAR_DEFAUT,
+  env = {},
+  asteroids = {},
+  alertTypes = {},
+}) {
 
   const svgRef = useRef(null);
   const previousAsteroidStateRef = useRef(false);
   const [impacts, setImpacts] = useState({});
   const [shipImpactPulse, setShipImpactPulse] = useState(false);
-
-  // Initialisation de la connexion MQTT
-  useEffect(() => {
-    // adresse Raspberry Pi
-    const RASPBERRY_IP = '10.0.0.1';
-    const client = mqtt.connect(`ws://${RASPBERRY_IP}:9001`);
-
-    client.on('connect', () => {
-      console.log('Connecté au Raspberry Pi via MQTT WebSocket');
-      client.subscribe('leviathan/secteurs/#');
-      client.subscribe('leviathan/alertes/#');
-    });
-
-    client.on('message', (topic, message) => {
-      try {
-        const payload = JSON.parse(message.toString());
-        const parts = topic.split('/');
-
-        // Topic de télémétrie (ex: leviathan/secteurs/laboratoire/telemetry)
-        if (parts[1] === 'secteurs' && parts[3] === 'telemetry') {
-          const zoneId = parts[2];
-          setEnv(prev => ({
-            ...prev,
-            [zoneId]: {
-              temperature: payload.temperature,
-              humidity: payload.humidity,
-              oxygen: payload.oxygen,
-              radiation: payload.radiation,
-            }
-          }));
-
-          if (payload.status) {
-            setZones(prev => ({ ...prev, [zoneId]: payload.status }));
-          }
-        }
-
-        // Topic d'alertes (ex: leviathan/alertes/laboratoire)
-        if (parts[1] === 'alertes') {
-          const zoneId = parts[2];
-          if (payload.type === 'asteroid') {
-            setAsteroids(prev => ({ ...prev, [zoneId]: payload.active }));
-          } else {
-            setAlertTypes(prev => ({ ...prev, [zoneId]: payload.active ? payload.type : null }));
-            setZones(prev => ({ ...prev, [zoneId]: payload.active ? 'alert' : 'ok' }));
-          }
-        }
-      } catch (err) {
-        console.error('Erreur de traitement MQTT:', err);
-      }
-    });
-
-    return () => {
-      if (client) client.end();
-    };
-  }, []);
 
   // Calcul des points d'impact
   useEffect(() => {
@@ -355,6 +369,7 @@ export default function ShipMap() {
         transformOrigin: 'center center',
       }}
     >
+      <div className="relative">
       <svg ref={svgRef} viewBox="0 0 800 500" className="w-full h-auto">
         <rect x="0" y="0" width="800" height="500" fill="#000" opacity="0.2" />
 
@@ -430,16 +445,22 @@ export default function ShipMap() {
         </g>
       </svg>
 
+      {alertTypes && Object.entries(alertTypes).map(([id, type]) => {
+        if (type !== 'radiation' || ZONE_X_FRAC[id] == null) return null;
+        return <RadiationMarker key={`${id}-radiation`} zoneId={id} xFrac={ZONE_X_FRAC[id]} yFrac={ZONE_Y_FRAC} />;
+      })}
+
+      {alertTypes && Object.entries(alertTypes).map(([id, type]) => {
+        if (type !== 'sabotage' || ZONE_X_FRAC[id] == null) return null;
+        return <SabotageLanding key={`${id}-sabotage`} zoneId={id} xFrac={ZONE_X_FRAC[id]} yFrac={ZONE_Y_FRAC} />;
+      })}
+      </div>
+
       {asteroids && Object.entries(asteroids).map(([id, active]) =>
         active && impacts[id]
           ? <AsteroidImpact key={id} zoneId={id} impactX={impacts[id].x} impactY={impacts[id].y} />
           : null
       )}
-
-      {alertTypes && Object.entries(alertTypes).map(([id, type]) => {
-        if (type !== 'radiation' || !impacts[id]) return null;
-        return <RadiationMarker key={`${id}-radiation`} zoneId={id} x={impacts[id].x} y={impacts[id].y} />;
-      })}
     </div>
   );
 }
