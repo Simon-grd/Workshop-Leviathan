@@ -36,7 +36,8 @@ const SCENARIO_META = {
 const ALERTE_AFFICHAGE_MS = 6000;
 
 // L'API du vaisseau : les scénarios y sont joués POUR DE VRAI.
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://10.0.0.33:8000';
+// Adresse fournie par .env.local (NEXT_PUBLIC_API_URL), jamais en dur.
+const API = process.env.NEXT_PUBLIC_API_URL;
 
 // Un incident dure tant que le moteur ne l'a pas levé. Les minuteries de
 // SCENARIO_META ne servent qu'à l'animation d'entrée ; l'état de la zone,
@@ -118,7 +119,7 @@ export default function useShipStatus() {
   // Déclenche un incident réel via l'API : le moteur agira sur les conteneurs.
   const declencherReel = async (scenarioKey, zone) => {
     const type = SCENARIO_VERS_API[scenarioKey];
-    if (!type) return false;
+    if (!type || !API) return false;
     try {
       const r = await fetch(`${API}/api/incident`, {
         method: 'POST',
@@ -132,6 +133,7 @@ export default function useShipStatus() {
   };
 
   const jouerScenario = async (nom) => {
+    if (!API) return false;
     try {
       const r = await fetch(`${API}/api/scenario/${nom}`, { method: 'POST' });
       return r.ok;
